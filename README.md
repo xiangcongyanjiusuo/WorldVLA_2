@@ -1,18 +1,43 @@
 # WorldVLA-2: Action World Model 训练流程
 
-基于 [RynnVLA-002](https://github.com/alibaba-damo-academy/RynnVLA-002) 框架，在 LIBERO-Goal 基准上进行 Action World Model 的训练与发布。本仓库记录从数据准备到模型生成的完整流程，并提供训练好的模型权重。
+基于 [RynnVLA-002](https://github.com/alibaba-damo-academy/RynnVLA-002) 框架，进行 Action World Model 的训练与发布。本仓库记录从数据准备到模型生成的完整流程，并提供训练好的模型权重。
 
 ## 项目概述
 
-本项目在 LIBERO-Goal 任务套件上训练了一个统一的 Action World Model，将 VLA 动作模型与世界模型融合在单一框架中。模型输入包含三组数据：
+本项目将 VLA 动作模型与世界模型融合在单一框架中，基于 7B 参数的 Chameleon 架构，通过 Action Transformer 输出连续动作，同时具备图像生成（世界模型）能力。
 
-| 数据组 | 说明 |
-| :---: | :--- |
-| **Third View** | 第三视角相机图像（外部观察） |
-| **Wrist** | 手腕相机图像（第一人称观察） |
-| **State** | 机器人末端执行器状态（位姿 + 夹爪） |
+模型训练使用三组采集数据作为输入：
 
-模型基于 7B 参数的 Chameleon 架构，通过 Action Transformer 输出连续动作，同时具备图像生成（世界模型）能力。
+| 数据组 | 文件 | 对话数 | 说明 |
+| :--- | :--- | :---: | :--- |
+| **VLA 动作模型** | [libero_vla_data_his_1_train_img_state_abs_ck_1_256.json](./data/libero_vla_data_his_1_train_img_state_abs_ck_1_256.json) | 839 | 前向相机 + 腕部相机 + 状态 → 20 步动作序列 |
+| **World Model 前向** | [libero_world_model_data_his_1_train_a2i_512_abs_front_all_data.json](./data/libero_world_model_data_his_1_train_a2i_512_abs_front_all_data.json) | 836 | 历史图像 + 动作 → 下一帧前向相机图像 |
+| **World Model 腕部** | [libero_world_model_data_his_1_train_a2i_512_abs_wrist_all_data.json](./data/libero_world_model_data_his_1_train_a2i_512_abs_wrist_all_data.json) | 836 | 历史图像 + 动作 → 下一帧腕部相机图像 |
+
+数据来源为 3 个 episodes 的真实机器人遥操作采集（Pick and Place 任务），每个 episode 包含 320 帧数据，含前向相机图像、腕部相机图像、机器人状态（6 维位姿 + 夹爪）和动作（6 维）。
+
+> 数据采集至三组数据的完整流程见此前发布的 [数据采集仓库](https://github.com/xiangcongyanjiusuo)。
+
+## 仓库结构
+
+```
+WorldVLA_2/
+├── data/                          # 三组采集对话数据
+│   ├── libero_vla_data_his_1_train_img_state_abs_ck_1_256.json
+│   ├── libero_world_model_data_his_1_train_a2i_512_abs_front_all_data.json
+│   ├── libero_world_model_data_his_1_train_a2i_512_abs_wrist_all_data.json
+│   └── README.md
+├── scripts/                       # 训练与评估脚本
+│   ├── libero_goal_his_2_third_view_wrist_w_state_5_256_abiw.sh     # 训练脚本
+│   ├── eval_libero_goal_his_2_third_view_wrist_w_state_5_256_abiw_continous.sh  # 连续动作评估
+│   ├── eval_libero_goal_his_2_third_view_wrist_w_state_5_256_abiw_discrete.sh   # 离散动作评估
+│   └── his_2_third_view_wrist_w_state_5_256_pretokenize.yaml         # 数据配置
+├── model_config/                  # 模型配置文件（不含权重）
+│   ├── config.json
+│   ├── generation_config.json
+│   └── model.safetensors.index.json
+└── README.md
+```
 
 ## 预训练模型
 
@@ -31,17 +56,11 @@
 
 ### Step 1: 数据准备
 
-数据准备流程（过滤 no-op、提取图像/动作/状态、生成对话格式、分词）详见 [RynnVLA-002](https://github.com/alibaba-damo-academy/RynnVLA-002) 官方文档。本项目数据采集至三组数据的流程见此前发布的 [数据采集仓库](https://github.com/xiangcongyanjiusuo)。
-
-训练使用的数据配置（Pretokenize 管线）：
-
-```
-rynnvla-002/configs/libero_goal/his_2_third_view_wrist_w_state_5_256_pretokenize.yaml
-```
+数据准备流程（过滤 no-op、提取图像/动作/状态、生成对话格式、分词）详见 [RynnVLA-002](https://github.com/alibaba-damo-academy/RynnVLA-002) 官方文档。训练使用的数据配置见 [scripts/his_2_third_view_wrist_w_state_5_256_pretokenize.yaml](./scripts/his_2_third_view_wrist_w_state_5_256_pretokenize.yaml)。
 
 数据由 Action Model 数据与 World Model 数据拼接而成：
-- **Action Model**: `libero_goal_his_2_third_view_wrist_w_state_5_256`（历史 2 帧 + 第三视角 + 手腕 + 状态，5 步动作）
-- **World Model**: `libero_goal_his_1_third_view_wrist_a2i_256`（历史 1 帧，action-to-image 生成）
+- **Action Model**: 历史帧 + 第三视角 + 手腕 + 状态 → 多步动作
+- **World Model**: 历史 1 帧 + 动作 → 下一帧图像
 
 ### Step 2: 启动训练
 
@@ -70,16 +89,11 @@ bash libero_goal_his_2_third_view_wrist_w_state_5_256_abiw.sh
 
 ## 模型权重
 
-训练完成的模型权重（epoch 8）：
+训练完成的模型权重（epoch 8，~14 GB，Safetensors 格式，3 个分片）已上传至 HuggingFace：
 
-| 项目 | 详情 |
-| :--- | :--- |
-| 路径 | `outputs/libero_goal/his_2_third_view_wrist_w_state_5_256_abiw/epoch8/` |
-| 大小 | ~14 GB |
-| 格式 | Safetensors（3 个分片） |
-| 模型配置 | [config.json](./outputs/libero_goal/his_2_third_view_wrist_w_state_5_256_abiw/epoch8/config.json) |
+> 下载地址：（上传后填写）
 
-> 模型文件较大，请从 [Releases](../../releases) 页面下载，或参考下方官方模型权重。
+模型配置文件（不含权重）见 [model_config/](./model_config/) 目录。
 
 ### 官方模型权重参考
 
