@@ -89,9 +89,9 @@ bash libero_goal_his_2_third_view_wrist_w_state_5_256_abiw.sh
 
 ## 模型权重
 
-训练完成的模型权重（epoch 8，~14 GB，Safetensors 格式，3 个分片）已上传至 HuggingFace：
+训练完成的模型权重（epoch 8，~14 GB，Safetensors 格式，3 个分片）：
 
-> 下载地址：（上传后填写）
+> 下载地址：待上传（后续补充）
 
 模型配置文件（不含权重）见 [model_config/](./model_config/) 目录。
 
